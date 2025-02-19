@@ -1,0 +1,780 @@
+import tkinter as tk
+from tkinter import ttk, messagebox, simpledialog
+import psycopg2
+from PIL import Image, ImageTk
+
+# Подключение к базе данных PostgreSQL
+def connect_to_db():
+    try:
+        conn = psycopg2.connect(
+            dbname="Texnikum",
+            user="postgres",
+            password="1",
+            host="localhost",
+            port="5432"
+        )
+        return conn
+    except Exception as e:
+        messagebox.showerror("Ошибка", f"Не удалось подключиться к базе данных: {e}")
+        return None
+
+# Главное окно приложения
+class MainApp(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title("Техникум: Управление базой данных")
+        self.geometry("800x600")
+
+        # Логотип учебного заведения
+        try:
+            self.logo_image = Image.open(r"C:\Users\katsuhiraq\Documents\hiik.webp")  # Укажите путь к вашему логотипу
+            self.logo_image = self.logo_image.resize((100, 100), Image.Resampling.LANCZOS)
+            self.logo = ImageTk.PhotoImage(self.logo_image)
+            self.logo_label = tk.Label(self, image=self.logo)
+            self.logo_label.pack(pady=10)
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Не удалось загрузить логотип: {e}")
+
+        # Вкладки для таблиц
+        self.tab_control = ttk.Notebook(self)
+        self.tab1 = ttk.Frame(self.tab_control)
+        self.tab2 = ttk.Frame(self.tab_control)
+        self.tab3 = ttk.Frame(self.tab_control)
+        self.tab4 = ttk.Frame(self.tab_control)  # Новая вкладка "Расписание"
+        self.tab_control.add(self.tab1, text="Преподаватели")
+        self.tab_control.add(self.tab2, text="Группы")
+        self.tab_control.add(self.tab3, text="Кабинеты")
+        self.tab_control.add(self.tab4, text="Расписание")
+        self.tab_control.pack(expand=1, fill="both")
+
+        # Заполнение вкладок
+        self.create_teachers_tab()  # Создание вкладки "Преподаватели"
+        self.create_groups_tab()    # Создание вкладки "Группы"
+        self.create_classrooms_tab()  # Создание вкладки "Кабинеты"
+        self.create_schedule_tab()   # Создание вкладки "Расписание"
+
+    # Вкладка "Преподаватели"
+    def create_teachers_tab(self):
+        columns = ("преподаватель_id", "фио", "дисциплина")
+        self.teachers_tree = ttk.Treeview(self.tab1, columns=columns, show="headings")
+        self.teachers_tree.heading("преподаватель_id", text="ID")
+        self.teachers_tree.heading("фио", text="ФИО")
+        self.teachers_tree.heading("дисциплина", text="Дисциплина")
+        self.teachers_tree.pack(fill="both", expand=True)
+
+        btn_frame = tk.Frame(self.tab1)
+        btn_frame.pack(pady=10)
+        tk.Button(btn_frame, text="Добавить", command=self.add_teacher).pack(side="left", padx=5)
+        tk.Button(btn_frame, text="Редактировать", command=self.edit_teacher).pack(side="left", padx=5)
+        tk.Button(btn_frame, text="Удалить", command=self.delete_teacher).pack(side="left", padx=5)
+        tk.Button(btn_frame, text="Просмотреть", command=self.view_teacher_details).pack(side="left", padx=5)
+
+        self.load_teachers()
+
+    # Вкладка "Группы"
+    def create_groups_tab(self):
+        columns = ("группа_id", "название_группы", "количество_студентов")
+        self.groups_tree = ttk.Treeview(self.tab2, columns=columns, show="headings")
+        self.groups_tree.heading("группа_id", text="ID")
+        self.groups_tree.heading("название_группы", text="Название группы")
+        self.groups_tree.heading("количество_студентов", text="Количество студентов")
+        self.groups_tree.pack(fill="both", expand=True)
+
+        btn_frame = tk.Frame(self.tab2)
+        btn_frame.pack(pady=10)
+        tk.Button(btn_frame, text="Добавить", command=self.add_group).pack(side="left", padx=5)
+        tk.Button(btn_frame, text="Редактировать", command=self.edit_group).pack(side="left", padx=5)
+        tk.Button(btn_frame, text="Удалить", command=self.delete_group).pack(side="left", padx=5)
+        tk.Button(btn_frame, text="Просмотреть", command=self.view_group_details).pack(side="left", padx=5)
+
+        self.load_groups()
+
+    # Вкладка "Кабинеты"
+    def create_classrooms_tab(self):
+        columns = ("кабинет_id", "номер_кабинета", "описание", "количество_мест", "примечания")
+        self.classrooms_tree = ttk.Treeview(self.tab3, columns=columns, show="headings")
+        self.classrooms_tree.heading("кабинет_id", text="ID")
+        self.classrooms_tree.heading("номер_кабинета", text="Номер кабинета")
+        self.classrooms_tree.heading("описание", text="Описание")
+        self.classrooms_tree.heading("количество_мест", text="Вместимость")
+        self.classrooms_tree.heading("примечания", text="Примечания")
+        self.classrooms_tree.pack(fill="both", expand=True)
+
+        btn_frame = tk.Frame(self.tab3)
+        btn_frame.pack(pady=10)
+        tk.Button(btn_frame, text="Добавить", command=self.add_classroom).pack(side="left", padx=5)
+        tk.Button(btn_frame, text="Редактировать", command=self.edit_classroom).pack(side="left", padx=5)
+        tk.Button(btn_frame, text="Удалить", command=self.delete_classroom).pack(side="left", padx=5)
+
+        self.load_classrooms()
+
+    # Вкладка "Расписание"
+    def create_schedule_tab(self):
+        columns = ("расписание_id", "день_недели", "номер_пары", "преподаватель", "дисциплина", "группа", "кабинет")
+        self.schedule_tree = ttk.Treeview(self.tab4, columns=columns, show="headings")
+        self.schedule_tree.heading("расписание_id", text="ID")
+        self.schedule_tree.heading("день_недели", text="День недели")
+        self.schedule_tree.heading("номер_пары", text="Номер пары")
+        self.schedule_tree.heading("преподаватель", text="Преподаватель")
+        self.schedule_tree.heading("дисциплина", text="Дисциплина")
+        self.schedule_tree.heading("группа", text="Группа")
+        self.schedule_tree.heading("кабинет", text="Кабинет")
+        self.schedule_tree.pack(fill="both", expand=True)
+
+        btn_frame = tk.Frame(self.tab4)
+        btn_frame.pack(pady=10)
+        tk.Button(btn_frame, text="Добавить", command=self.add_schedule).pack(side="left", padx=5)
+        tk.Button(btn_frame, text="Редактировать", command=self.edit_schedule).pack(side="left", padx=5)
+        tk.Button(btn_frame, text="Удалить", command=self.delete_schedule).pack(side="left", padx=5)
+
+        self.load_schedule()
+
+    # Загрузка данных из таблицы "Преподаватели"
+    def load_teachers(self):
+        self.teachers_tree.delete(*self.teachers_tree.get_children())
+        conn = connect_to_db()
+        if conn:
+            try:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT p.преподаватель_id, p.фио, d.название_дисциплины 
+                    FROM Преподаватели p 
+                    LEFT JOIN Дисциплины d ON p.дисциплина_id = d.дисциплина_id
+                """)
+                rows = cursor.fetchall()
+                for row in rows:
+                    self.teachers_tree.insert("", "end", values=row)
+            except Exception as e:
+                messagebox.showerror("Ошибка", f"Ошибка при загрузке преподавателей: {e}")
+            finally:
+                conn.close()
+
+    # Загрузка данных из таблицы "Группы"
+    def load_groups(self):
+        self.groups_tree.delete(*self.groups_tree.get_children())
+        conn = connect_to_db()
+        if conn:
+            try:
+                cursor = conn.cursor()
+                cursor.execute("SELECT группа_id, название_группы, количество_студентов FROM Группы")
+                rows = cursor.fetchall()
+                for row in rows:
+                    self.groups_tree.insert("", "end", values=row)
+            except Exception as e:
+                messagebox.showerror("Ошибка", f"Ошибка при загрузке групп: {e}")
+            finally:
+                conn.close()
+
+    # Загрузка данных из таблицы "Кабинеты"
+    def load_classrooms(self):
+        self.classrooms_tree.delete(*self.classrooms_tree.get_children())
+        conn = connect_to_db()
+        if conn:
+            try:
+                cursor = conn.cursor()
+                cursor.execute("SELECT кабинет_id, номер_кабинета, описание, количество_мест, примечания FROM Кабинеты")
+                rows = cursor.fetchall()
+                for row in rows:
+                    self.classrooms_tree.insert("", "end", values=row)
+            except Exception as e:
+                messagebox.showerror("Ошибка", f"Ошибка при загрузке кабинетов: {e}")
+            finally:
+                conn.close()
+
+    # Загрузка данных из таблицы "Расписание"
+    def load_schedule(self):
+        self.schedule_tree.delete(*self.schedule_tree.get_children())
+        conn = connect_to_db()
+        if conn:
+            try:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT r.расписание_id, r.день_недели, r.номер_пары,
+                           p.фио AS преподаватель, d.название_дисциплины AS дисциплина,
+                           g.название_группы AS группа, c.номер_кабинета AS кабинет
+                    FROM Расписание r
+                    JOIN Преподаватели p ON r.преподаватель_id = p.преподаватель_id
+                    JOIN Дисциплины d ON r.дисциплина_id = d.дисциплина_id
+                    JOIN Группы g ON r.группа_id = g.группа_id
+                    LEFT JOIN Кабинеты c ON r.кабинет_id = c.кабинет_id
+                """)
+                rows = cursor.fetchall()
+                for row in rows:
+                    self.schedule_tree.insert("", "end", values=row)
+            except Exception as e:
+                messagebox.showerror("Ошибка", f"Ошибка при загрузке расписания: {e}")
+            finally:
+                conn.close()
+
+    # Добавление преподавателя
+    def add_teacher(self):
+        фио = simpledialog.askstring("Добавить преподавателя", "Введите ФИО:")
+        название_дисциплины = simpledialog.askstring("Добавить преподавателя", "Введите название дисциплины:")
+        if not фио or not название_дисциплины:
+            messagebox.showerror("Ошибка", "ФИО и название дисциплины должны быть заполнены.")
+            return
+
+        conn = connect_to_db()
+        if conn:
+            try:
+                cursor = conn.cursor()
+                cursor.execute("SELECT дисциплина_id FROM Дисциплины WHERE название_дисциплины = %s", (название_дисциплины,))
+                дисциплина_id = cursor.fetchone()
+                if not дисциплина_id:
+                    cursor.execute("INSERT INTO Дисциплины (название_дисциплины) VALUES (%s) RETURNING дисциплина_id", (название_дисциплины,))
+                    дисциплина_id = cursor.fetchone()[0]
+                else:
+                    дисциплина_id = дисциплина_id[0]
+
+                cursor.execute(
+                    "INSERT INTO Преподаватели (фио, дисциплина_id) VALUES (%s, %s)",
+                    (фио, дисциплина_id)
+                )
+                conn.commit()
+                self.load_teachers()
+                messagebox.showinfo("Успех", "Преподаватель успешно добавлен.")
+            except Exception as e:
+                messagebox.showerror("Ошибка", f"Ошибка при добавлении записи: {e}")
+            finally:
+                conn.close()
+
+    # Редактирование преподавателя
+    def edit_teacher(self):
+        selected_item = self.teachers_tree.selection()
+        if not selected_item:
+            messagebox.showwarning("Ошибка", "Выберите запись для редактирования")
+            return
+
+        преподаватель_id = self.teachers_tree.item(selected_item, "values")[0]
+        фио = simpledialog.askstring("Редактировать преподавателя", "Введите новое ФИО:")
+        название_дисциплины = simpledialog.askstring("Редактировать преподавателя", "Введите новую дисциплину:")
+        if not фио or not название_дисциплины:
+            messagebox.showerror("Ошибка", "ФИО и название дисциплины должны быть заполнены.")
+            return
+
+        conn = connect_to_db()
+        if conn:
+            try:
+                cursor = conn.cursor()
+                cursor.execute("SELECT дисциплина_id FROM Дисциплины WHERE название_дисциплины = %s", (название_дисциплины,))
+                дисциплина_id = cursor.fetchone()
+                if not дисциплина_id:
+                    cursor.execute("INSERT INTO Дисциплины (название_дисциплины) VALUES (%s) RETURNING дисциплина_id", (название_дисциплины,))
+                    дисциплина_id = cursor.fetchone()[0]
+                else:
+                    дисциплина_id = дисциплина_id[0]
+
+                cursor.execute(
+                    "UPDATE Преподаватели SET фио = %s, дисциплина_id = %s WHERE преподаватель_id = %s",
+                    (фио, дисциплина_id, преподаватель_id)
+                )
+                conn.commit()
+                self.load_teachers()
+                messagebox.showinfo("Успех", "Преподаватель успешно отредактирован.")
+            except Exception as e:
+                messagebox.showerror("Ошибка", f"Ошибка при редактировании записи: {e}")
+            finally:
+                conn.close()
+
+    # Удаление преподавателя
+    def delete_teacher(self):
+        selected_item = self.teachers_tree.selection()
+        if not selected_item:
+            messagebox.showwarning("Ошибка", "Выберите запись для удаления")
+            return
+
+        преподаватель_id = self.teachers_tree.item(selected_item, "values")[0]
+        conn = connect_to_db()
+        if conn:
+            try:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM Преподаватели WHERE преподаватель_id = %s", (преподаватель_id,))
+                conn.commit()
+                self.load_teachers()
+                messagebox.showinfo("Успех", "Преподаватель успешно удален.")
+            except Exception as e:
+                messagebox.showerror("Ошибка", f"Ошибка при удалении записи: {e}")
+            finally:
+                conn.close()
+
+    # Просмотр детальной информации о преподавателе
+    def view_teacher_details(self):
+        selected_item = self.teachers_tree.selection()
+        if not selected_item:
+            messagebox.showwarning("Ошибка", "Выберите преподавателя для просмотра")
+            return
+
+        преподаватель_id = self.teachers_tree.item(selected_item, "values")[0]
+        conn = connect_to_db()
+        if conn:
+            try:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT p.преподаватель_id, p.фио, d.название_дисциплины 
+                    FROM Преподаватели p 
+                    LEFT JOIN Дисциплины d ON p.дисциплина_id = d.дисциплина_id
+                    WHERE p.преподаватель_id = %s
+                """, (преподаватель_id,))
+                преподаватель = cursor.fetchone()
+                if преподаватель:
+                    details = f"ID: {преподаватель[0]}\nФИО: {преподаватель[1]}\nДисциплина: {преподаватель[2]}"
+                    messagebox.showinfo("Детальная информация", details)
+                else:
+                    messagebox.showerror("Ошибка", "Преподаватель не найден")
+            except Exception as e:
+                messagebox.showerror("Ошибка", f"Ошибка при получении данных: {e}")
+            finally:
+                conn.close()
+
+    # Добавление группы
+    def add_group(self):
+        название_группы = simpledialog.askstring("Добавить группу", "Введите название группы:")
+        количество_студентов = simpledialog.askinteger("Добавить группу", "Введите количество студентов:")
+        if not название_группы or количество_студентов is None or количество_студентов <= 0:
+            messagebox.showerror("Ошибка", "Название группы должно быть заполнено, а количество студентов — положительным числом.")
+            return
+
+        conn = connect_to_db()
+        if conn:
+            try:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "INSERT INTO Группы (название_группы, количество_студентов) VALUES (%s, %s)",
+                    (название_группы, количество_студентов)
+                )
+                conn.commit()
+                self.load_groups()
+                messagebox.showinfo("Успех", "Группа успешно добавлена.")
+            except Exception as e:
+                messagebox.showerror("Ошибка", f"Ошибка при добавлении записи: {e}")
+            finally:
+                conn.close()
+
+    # Редактирование группы
+    def edit_group(self):
+        selected_item = self.groups_tree.selection()
+        if not selected_item:
+            messagebox.showwarning("Ошибка", "Выберите запись для редактирования")
+            return
+
+        группа_id = self.groups_tree.item(selected_item, "values")[0]
+        название_группы = simpledialog.askstring("Редактировать группу", "Введите новое название группы:")
+        количество_студентов = simpledialog.askinteger("Редактировать группу", "Введите новое количество студентов:")
+        if not название_группы or количество_студентов is None or количество_студентов <= 0:
+            messagebox.showerror("Ошибка", "Название группы должно быть заполнено, а количество студентов — положительным числом.")
+            return
+
+        conn = connect_to_db()
+        if conn:
+            try:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "UPDATE Группы SET название_группы = %s, количество_студентов = %s WHERE группа_id = %s",
+                    (название_группы, количество_студентов, группа_id)
+                )
+                conn.commit()
+                self.load_groups()
+                messagebox.showinfo("Успех", "Группа успешно отредактирована.")
+            except Exception as e:
+                messagebox.showerror("Ошибка", f"Ошибка при редактировании записи: {e}")
+            finally:
+                conn.close()
+
+    # Удаление группы
+    def delete_group(self):
+        selected_item = self.groups_tree.selection()
+        if not selected_item:
+            messagebox.showwarning("Ошибка", "Выберите запись для удаления")
+            return
+
+        группа_id = self.groups_tree.item(selected_item, "values")[0]
+        conn = connect_to_db()
+        if conn:
+            try:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM Группы WHERE группа_id = %s", (группа_id,))
+                conn.commit()
+                self.load_groups()
+                messagebox.showinfo("Успех", "Группа успешно удалена.")
+            except Exception as e:
+                messagebox.showerror("Ошибка", f"Ошибка при удалении записи: {e}")
+            finally:
+                conn.close()
+
+    # Просмотр детальной информации о группе
+    def view_group_details(self):
+        selected_item = self.groups_tree.selection()
+        if not selected_item:
+            messagebox.showwarning("Ошибка", "Выберите группу для просмотра")
+            return
+
+        группа_id = self.groups_tree.item(selected_item, "values")[0]
+        conn = connect_to_db()
+        if conn:
+            try:
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM Группы WHERE группа_id = %s", (группа_id,))
+                группа = cursor.fetchone()
+                if группа:
+                    details = f"ID: {группа[0]}\nНазвание группы: {группа[1]}\nКоличество студентов: {группа[2]}"
+                    messagebox.showinfo("Детальная информация", details)
+                else:
+                    messagebox.showerror("Ошибка", "Группа не найдена")
+            except Exception as e:
+                messagebox.showerror("Ошибка", f"Ошибка при получении данных: {e}")
+            finally:
+                conn.close()
+
+    # Добавление кабинета
+    def add_classroom(self):
+        номер_кабинета = simpledialog.askstring("Добавить кабинет", "Введите номер кабинета:")
+        описание = simpledialog.askstring("Добавить кабинет", "Введите описание:")
+        количество_мест = simpledialog.askinteger("Добавить кабинет", "Введите вместимость:")
+        примечания = simpledialog.askstring("Добавить кабинет", "Введите примечания:")
+        if not номер_кабинета or not описание or количество_мест is None or количество_мест <= 0:
+            messagebox.showerror("Ошибка", "Номер кабинета, описание и вместимость должны быть заполнены. Вместимость должна быть положительным числом.")
+            return
+
+        conn = connect_to_db()
+        if conn:
+            try:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "INSERT INTO Кабинеты (номер_кабинета, описание, количество_мест, примечания) VALUES (%s, %s, %s, %s)",
+                    (номер_кабинета, описание, количество_мест, примечания)
+                )
+                conn.commit()
+                self.load_classrooms()
+                messagebox.showinfo("Успех", "Кабинет успешно добавлен.")
+            except Exception as e:
+                messagebox.showerror("Ошибка", f"Ошибка при добавлении записи: {e}")
+            finally:
+                conn.close()
+
+    # Редактирование кабинета
+    def edit_classroom(self):
+        selected_item = self.classrooms_tree.selection()
+        if not selected_item:
+            messagebox.showwarning("Ошибка", "Выберите запись для редактирования")
+            return
+
+        кабинет_id = self.classrooms_tree.item(selected_item, "values")[0]
+        номер_кабинета = simpledialog.askstring("Редактировать кабинет", "Введите новый номер кабинета:")
+        описание = simpledialog.askstring("Редактировать кабинет", "Введите новое описание:")
+        количество_мест = simpledialog.askinteger("Редактировать кабинет", "Введите новую вместимость:")
+        примечания = simpledialog.askstring("Редактировать кабинет", "Введите новые примечания:")
+        if not номер_кабинета or not описание or количество_мест is None or количество_мест <= 0:
+            messagebox.showerror("Ошибка", "Номер кабинета, описание и вместимость должны быть заполнены. Вместимость должна быть положительным числом.")
+            return
+
+        conn = connect_to_db()
+        if conn:
+            try:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "UPDATE Кабинеты SET номер_кабинета = %s, описание = %s, количество_мест = %s, примечания = %s WHERE кабинет_id = %s",
+                    (номер_кабинета, описание, количество_мест, примечания, кабинет_id)
+                )
+                conn.commit()
+                self.load_classrooms()
+                messagebox.showinfo("Успех", "Кабинет успешно отредактирован.")
+            except Exception as e:
+                messagebox.showerror("Ошибка", f"Ошибка при редактировании записи: {e}")
+            finally:
+                conn.close()
+
+    # Удаление кабинета
+    def delete_classroom(self):
+        selected_item = self.classrooms_tree.selection()
+        if not selected_item:
+            messagebox.showwarning("Ошибка", "Выберите запись для удаления")
+            return
+
+        кабинет_id = self.classrooms_tree.item(selected_item, "values")[0]
+        conn = connect_to_db()
+        if conn:
+            try:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM Кабинеты WHERE кабинет_id = %s", (кабинет_id,))
+                conn.commit()
+                self.load_classrooms()
+                messagebox.showinfo("Успех", "Кабинет успешно удален.")
+            except Exception as e:
+                messagebox.showerror("Ошибка", f"Ошибка при удалении записи: {e}")
+            finally:
+                conn.close()
+
+    # Добавление записи в расписание
+    def add_schedule(self):
+        while True:  # Повторяем запрос данных, пока не получим корректные
+            день_недели = simpledialog.askstring("Добавить запись", "Введите день недели:")
+            if not день_недели:
+                messagebox.showerror("Ошибка", "День недели должен быть заполнен.")
+                continue
+
+            номер_пары = simpledialog.askinteger("Добавить запись", "Введите номер пары:")
+            if not номер_пары or номер_пары <= 0:
+                messagebox.showerror("Ошибка", "Номер пары должен быть положительным числом.")
+                continue
+
+            преподаватель = simpledialog.askstring("Добавить запись", "Введите ФИО преподавателя:")
+            if not преподаватель:
+                messagebox.showerror("Ошибка", "ФИО преподавателя должно быть заполнено.")
+                continue
+
+            название_дисциплины = simpledialog.askstring("Добавить запись", "Введите название дисциплины:")
+            if not название_дисциплины:
+                messagebox.showerror("Ошибка", "Название дисциплины должно быть заполнено.")
+                continue
+
+            название_группы = simpledialog.askstring("Добавить запись", "Введите название группы:")
+            if not название_группы:
+                messagebox.showerror("Ошибка", "Название группы должно быть заполнено.")
+                continue
+
+            номер_кабинета = simpledialog.askstring("Добавить запись", "Введите номер кабинета:")
+
+            conn = connect_to_db()
+            if conn:
+                try:
+                    cursor = conn.cursor()
+
+                    # Получаем ID преподавателя и его дисциплину
+                    cursor.execute("SELECT преподаватель_id, дисциплина_id FROM Преподаватели WHERE фио = %s",
+                                   (преподаватель,))
+                    result = cursor.fetchone()
+                    if not result:
+                        messagebox.showerror("Ошибка", f"Преподаватель '{преподаватель}' не найден.")
+                        continue
+                    преподаватель_id, дисциплина_id_преподавателя = result
+
+                    # Получаем ID дисциплины
+                    cursor.execute("SELECT дисциплина_id FROM Дисциплины WHERE название_дисциплины = %s",
+                                   (название_дисциплины,))
+                    дисциплина_id = cursor.fetchone()
+                    if not дисциплина_id:
+                        messagebox.showerror("Ошибка", f"Дисциплина '{название_дисциплины}' не найдена.")
+                        continue
+                    дисциплина_id = дисциплина_id[0]
+
+                    # Проверяем, что преподаватель может преподавать эту дисциплину
+                    if дисциплина_id != дисциплина_id_преподавателя:
+                        messagebox.showerror("Ошибка",
+                                             f"Преподаватель '{преподаватель}' не может преподавать дисциплину '{название_дисциплины}'.")
+                        continue
+
+                    # Получаем ID группы
+                    cursor.execute("SELECT группа_id FROM Группы WHERE название_группы = %s", (название_группы,))
+                    группа_id = cursor.fetchone()
+                    if not группа_id:
+                        messagebox.showerror("Ошибка", f"Группа '{название_группы}' не найдена.")
+                        continue
+                    группа_id = группа_id[0]
+
+                    # Получаем ID кабинета
+                    if номер_кабинета:
+                        cursor.execute("SELECT кабинет_id FROM Кабинеты WHERE номер_кабинета = %s", (номер_кабинета,))
+                        кабинет_id = cursor.fetchone()
+                        if not кабинет_id:
+                            messagebox.showerror("Ошибка", f"Кабинет с номером '{номер_кабинета}' не найден.")
+                            return
+                        кабинет_id = кабинет_id[0]
+                    else:
+                        # Если номер кабинета не указан, используйте дефолтное значение или выбросите ошибку
+                        messagebox.showerror("Ошибка", "Номер кабинета должен быть указан.")
+                        return
+
+                    # Проверка на конфликты расписания
+                    cursor.execute("""
+                        SELECT COUNT(*) FROM Расписание
+                        WHERE день_недели = %s AND номер_пары = %s AND кабинет_id = %s
+                    """, (день_недели, номер_пары, кабинет_id))
+                    if cursor.fetchone()[0] > 0:
+                        messagebox.showerror("Ошибка", "Аудитория уже занята в это время.")
+                        continue
+
+                    cursor.execute("""
+                        SELECT COUNT(*) FROM Расписание
+                        WHERE день_недели = %s AND номер_пары = %s AND преподаватель_id = %s
+                    """, (день_недели, номер_пары, преподаватель_id))
+                    if cursor.fetchone()[0] > 0:
+                        messagebox.showerror("Ошибка", "Преподаватель уже занят в это время.")
+                        continue
+
+                    cursor.execute("""
+                        SELECT COUNT(*) FROM Расписание
+                        WHERE день_недели = %s AND номер_пары = %s AND группа_id = %s
+                    """, (день_недели, номер_пары, группа_id))
+                    if cursor.fetchone()[0] > 0:
+                        messagebox.showerror("Ошибка", "Группа уже занята в это время.")
+                        continue
+
+                    # Добавляем запись в расписание
+                    cursor.execute("""
+                            INSERT INTO Расписание (
+                                день_недели, номер_пары, преподаватель_id, дисциплина_id, группа_id, кабинет_id
+                            ) VALUES (%s, %s, %s, %s, %s, %s)
+                        """, (день_недели, номер_пары, преподаватель_id, дисциплина_id, группа_id, кабинет_id))
+                    conn.commit()
+                    self.load_schedule()
+                    messagebox.showinfo("Успех", "Запись успешно добавлена.")
+                    break  # Выходим из цикла после успешного добавления
+                except Exception as e:
+                    messagebox.showerror("Ошибка", f"Ошибка при добавлении записи: {e}")
+                finally:
+                    conn.close()
+
+    # Редактирование записи в расписании
+    def edit_schedule(self):
+        selected_item = self.schedule_tree.selection()
+        if not selected_item:
+            messagebox.showwarning("Ошибка", "Выберите запись для редактирования")
+            return
+
+        расписание_id = self.schedule_tree.item(selected_item, "values")[0]
+
+        while True:  # Повторяем запрос данных, пока не получим корректные
+            день_недели = simpledialog.askstring("Редактировать запись", "Введите новый день недели:")
+            if not день_недели:
+                messagebox.showerror("Ошибка", "День недели должен быть заполнен.")
+                continue
+
+            номер_пары = simpledialog.askinteger("Редактировать запись", "Введите новый номер пары:")
+            if not номер_пары or номер_пары <= 0:
+                messagebox.showerror("Ошибка", "Номер пары должен быть положительным числом.")
+                continue
+
+            преподаватель = simpledialog.askstring("Редактировать запись", "Введите нового преподавателя:")
+            if not преподаватель:
+                messagebox.showerror("Ошибка", "ФИО преподавателя должно быть заполнено.")
+                continue
+
+            название_дисциплины = simpledialog.askstring("Редактировать запись", "Введите новую дисциплину:")
+            if not название_дисциплины:
+                messagebox.showerror("Ошибка", "Название дисциплины должно быть заполнено.")
+                continue
+
+            название_группы = simpledialog.askstring("Редактировать запись", "Введите новую группу:")
+            if not название_группы:
+                messagebox.showerror("Ошибка", "Название группы должно быть заполнено.")
+                continue
+
+            номер_кабинета = simpledialog.askstring("Редактировать запись", "Введите новый кабинет:")
+
+            conn = connect_to_db()
+            if conn:
+                try:
+                    cursor = conn.cursor()
+
+                    # Получаем ID преподавателя и его дисциплину
+                    cursor.execute("SELECT преподаватель_id, дисциплина_id FROM Преподаватели WHERE фио = %s",
+                                   (преподаватель,))
+                    result = cursor.fetchone()
+                    if not result:
+                        messagebox.showerror("Ошибка", f"Преподаватель '{преподаватель}' не найден.")
+                        continue
+                    преподаватель_id, дисциплина_id_преподавателя = result
+
+                    # Получаем ID дисциплины
+                    cursor.execute("SELECT дисциплина_id FROM Дисциплины WHERE название_дисциплины = %s",
+                                   (название_дисциплины,))
+                    дисциплина_id = cursor.fetchone()
+                    if not дисциплина_id:
+                        messagebox.showerror("Ошибка", f"Дисциплина '{название_дисциплины}' не найдена.")
+                        continue
+                    дисциплина_id = дисциплина_id[0]
+
+                    # Проверяем, что преподаватель может преподавать эту дисциплину
+                    if дисциплина_id != дисциплина_id_преподавателя:
+                        messagebox.showerror("Ошибка",
+                                             f"Преподаватель '{преподаватель}' не может преподавать дисциплину '{название_дисциплины}'.")
+                        continue
+
+                    # Получаем ID группы
+                    cursor.execute("SELECT группа_id FROM Группы WHERE название_группы = %s", (название_группы,))
+                    группа_id = cursor.fetchone()
+                    if not группа_id:
+                        messagebox.showerror("Ошибка", f"Группа '{название_группы}' не найдена.")
+                        continue
+                    группа_id = группа_id[0]
+
+                    # Получаем ID кабинета
+                    if номер_кабинета:
+                        cursor.execute("SELECT кабинет_id FROM Кабинеты WHERE номер_кабинета = %s", (номер_кабинета,))
+                        кабинет_id = cursor.fetchone()
+                        if not кабинет_id:
+                            messagebox.showerror("Ошибка", f"Кабинет с номером '{номер_кабинета}' не найден.")
+                            continue
+                        кабинет_id = кабинет_id[0]
+                    else:
+                        кабинет_id = None
+
+                    # Проверка на конфликты расписания
+                    cursor.execute("""
+                        SELECT COUNT(*) FROM Расписание
+                        WHERE день_недели = %s AND номер_пары = %s AND кабинет_id = %s AND расписание_id != %s
+                    """, (день_недели, номер_пары, кабинет_id, расписание_id))
+                    if cursor.fetchone()[0] > 0:
+                        messagebox.showerror("Ошибка", "Аудитория уже занята в это время.")
+                        continue
+
+                    cursor.execute("""
+                        SELECT COUNT(*) FROM Расписание
+                        WHERE день_недели = %s AND номер_пары = %s AND преподаватель_id = %s AND расписание_id != %s
+                    """, (день_недели, номер_пары, преподаватель_id, расписание_id))
+                    if cursor.fetchone()[0] > 0:
+                        messagebox.showerror("Ошибка", "Преподаватель уже занят в это время.")
+                        continue
+
+                    cursor.execute("""
+                        SELECT COUNT(*) FROM Расписание
+                        WHERE день_недели = %s AND номер_пары = %s AND группа_id = %s AND расписание_id != %s
+                    """, (день_недели, номер_пары, группа_id, расписание_id))
+                    if cursor.fetchone()[0] > 0:
+                        messagebox.showerror("Ошибка", "Группа уже занята в это время.")
+                        continue
+
+                    # Обновляем запись в расписании
+                    cursor.execute("""
+                        UPDATE Расписание
+                        SET день_недели = %s, номер_пары = %s, преподаватель_id = %s, 
+                            дисциплина_id = %s, группа_id = %s, кабинет_id = %s
+                        WHERE расписание_id = %s
+                    """, (
+                    день_недели, номер_пары, преподаватель_id, дисциплина_id, группа_id, кабинет_id, расписание_id))
+                    conn.commit()
+                    self.load_schedule()
+                    messagebox.showinfo("Успех", "Запись успешно отредактирована.")
+                    break  # Выходим из цикла после успешного редактирования
+                except Exception as e:
+                    messagebox.showerror("Ошибка", f"Ошибка при редактировании записи: {e}")
+                finally:
+                    conn.close()
+
+    # Удаление записи из расписания
+    def delete_schedule(self):
+        selected_item = self.schedule_tree.selection()
+        if not selected_item:
+            messagebox.showwarning("Ошибка", "Выберите запись для удаления")
+            return
+
+        расписание_id = self.schedule_tree.item(selected_item, "values")[0]
+        conn = connect_to_db()
+        if conn:
+            try:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM Расписание WHERE расписание_id = %s", (расписание_id,))
+                conn.commit()
+                self.load_schedule()
+                messagebox.showinfo("Успех", "Запись успешно удалена.")
+            except Exception as e:
+                messagebox.showerror("Ошибка", f"Ошибка при удалении записи: {e}")
+            finally:
+                conn.close()
+
+
+
+# Запуск приложения
+if __name__ == "__main__":
+    app = MainApp()
+    app.mainloop()
