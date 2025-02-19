@@ -1,0 +1,125 @@
+import unittest
+from MainApp import connect_to_db
+class TestDatabaseOperations(unittest.TestCase):
+    def setUp(self):
+        """Подготовка перед каждым тестом."""
+        self.conn = connect_to_db()
+        if not self.conn:
+            self.fail("Не удалось подключиться к базе данных.")
+
+    def tearDown(self):
+        """Очистка после каждого теста."""
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute("ROLLBACK")  # Откатываем транзакцию, если она в состоянии ошибки
+            cursor.execute("DELETE FROM Расписание WHERE день_недели = 'TestDay'")
+            cursor.execute("DELETE FROM Группы WHERE название_группы = 'TestGroup'")
+            cursor.execute("DELETE FROM Преподаватели WHERE фио = 'TestTeacher'")
+            cursor.execute("DELETE FROM Дисциплины WHERE название_дисциплины = 'TestDiscipline'")
+            cursor.execute("DELETE FROM Кабинеты WHERE номер_кабинета = 'TestRoom'")
+            self.conn.commit()
+        except Exception as e:
+            self.conn.rollback()  # Откатываем транзакцию в случае ошибки
+            print(f"Ошибка при очистке данных: {e}")
+
+    def test_add_teacher(self):
+        """Тест добавления преподавателя."""
+        cursor = self.conn.cursor()
+        cursor.execute("INSERT INTO Дисциплины (название_дисциплины) VALUES ('TestDiscipline') RETURNING дисциплина_id")
+        discipline_id = cursor.fetchone()[0]
+        cursor.execute("INSERT INTO Преподаватели (фио, дисциплина_id) VALUES ('TestTeacher', %s)", (discipline_id,))
+        self.conn.commit()
+
+        cursor.execute("SELECT COUNT(*) FROM Преподаватели WHERE фио = 'TestTeacher'")
+        count = cursor.fetchone()[0]
+        self.assertEqual(count, 1)
+
+    def test_add_group(self):
+        """Тест добавления группы."""
+        cursor = self.conn.cursor()
+        cursor.execute("INSERT INTO Группы (название_группы, количество_студентов) VALUES ('TestGroup', 20)")
+        self.conn.commit()
+
+        cursor.execute("SELECT COUNT(*) FROM Группы WHERE название_группы = 'TestGroup'")
+        count = cursor.fetchone()[0]
+        self.assertEqual(count, 1)
+
+    def test_add_schedule(self):
+        cursor = self.conn.cursor()
+
+        # Добавляем дисциплину
+        cursor.execute("INSERT INTO Дисциплины (название_дисциплины) VALUES ('TestDiscipline') RETURNING дисциплина_id")
+        discipline_id = cursor.fetchone()[0]
+
+        # Добавляем преподавателя
+        cursor.execute(
+            "INSERT INTO Преподаватели (фио, дисциплина_id) VALUES ('TestTeacher', %s) RETURNING преподаватель_id",
+            (discipline_id,))
+        teacher_id = cursor.fetchone()[0]
+
+        # Добавляем группу
+        cursor.execute(
+            "INSERT INTO Группы (название_группы, количество_студентов) VALUES ('TestGroup', 20) RETURNING группа_id")
+        group_id = cursor.fetchone()[0]
+
+        # Добавляем кабинет
+        cursor.execute(
+            "INSERT INTO Кабинеты (номер_кабинета, описание, количество_мест) VALUES ('TestRoom', 'Test description', 30) RETURNING кабинет_id")
+        classroom_id = cursor.fetchone()[0]
+
+        # Добавляем запись в расписание
+        cursor.execute("""
+            INSERT INTO Расписание (день_недели, номер_пары, преподаватель_id, дисциплина_id, группа_id, кабинет_id)
+            VALUES ('TestDay', 1, %s, %s, %s, %s)
+        """, (teacher_id, discipline_id, group_id, classroom_id))
+
+        self.conn.commit()
+
+        # Проверяем, что запись добавлена
+        cursor.execute("SELECT COUNT(*) FROM Расписание WHERE день_недели = 'TestDay'")
+        count = cursor.fetchone()[0]
+        self.assertEqual(count, 1)
+
+        def test_delete_schedule(self):
+            cursor = self.conn.cursor()
+
+            # Добавляем дисциплину
+            cursor.execute(
+                "INSERT INTO Дисциплины (название_дисциплины) VALUES ('TestDiscipline') RETURNING дисциплина_id")
+            discipline_id = cursor.fetchone()[0]
+
+            # Добавляем преподавателя
+            cursor.execute(
+                "INSERT INTO Преподаватели (фио, дисциплина_id) VALUES ('TestTeacher', %s) RETURNING преподаватель_id",
+                (discipline_id,))
+            teacher_id = cursor.fetchone()[0]
+
+            # Добавляем группу
+            cursor.execute(
+                "INSERT INTO Группы (название_группы, количество_студентов) VALUES ('TestGroup', 20) RETURNING группа_id")
+            group_id = cursor.fetchone()[0]
+
+            # Добавляем кабинет
+            cursor.execute(
+                "INSERT INTO Кабинеты (номер_кабинета, описание, количество_мест) VALUES ('TestRoom', 'Test description', 30) RETURNING кабинет_id")
+            classroom_id = cursor.fetchone()[0]
+
+            # Добавляем запись в расписание
+            cursor.execute("""
+                INSERT INTO Расписание (день_недели, номер_пары, преподаватель_id, дисциплина_id, группа_id, кабинет_id)
+                VALUES ('TestDay', 1, %s, %s, %s, %s)
+            """, (teacher_id, discipline_id, group_id, classroom_id))
+
+            self.conn.commit()
+
+            # Удаляем запись из расписания
+            cursor.execute("DELETE FROM Расписание WHERE день_недели = 'TestDay'")
+            self.conn.commit()
+
+            # Проверяем, что запись удалена
+            cursor.execute("SELECT COUNT(*) FROM Расписание WHERE день_недели = 'TestDay'")
+            count = cursor.fetchone()[0]
+            self.assertEqual(count, 0)
+
+if __name__ == "__main__":
+    unittest.main()
